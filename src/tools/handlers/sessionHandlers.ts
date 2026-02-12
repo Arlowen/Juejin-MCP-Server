@@ -5,11 +5,11 @@ import { ToolError } from "../../shared/toolError.js";
 import type { ToolDefinition } from "../types.js";
 
 const sessionInitSchema = {
-  headless: z.boolean().optional().default(false),
-  userDataDir: z.string().trim().min(1),
+  headless: z.boolean().optional(),
+  userDataDir: z.string().trim().min(1).optional(),
   proxy: z.string().trim().min(1).nullable().optional(),
-  locale: z.string().trim().min(1).optional().default("zh-CN"),
-  timeoutMs: z.number().int().positive().optional().default(45_000)
+  locale: z.string().trim().min(1).optional(),
+  timeoutMs: z.number().int().positive().optional()
 };
 
 type SessionInitInput = z.infer<z.ZodObject<typeof sessionInitSchema>>;
@@ -40,10 +40,19 @@ export const sessionInitToolDefinition: ToolDefinition<
   }
 > = {
   name: "session_init",
-  description: "启动或复用浏览器会话，并加载 persistent 登录态。",
+  description: "启动或复用浏览器会话，并加载 persistent 登录态。所有参数均可选，未传时使用环境变量默认值。",
   schema: sessionInitSchema,
   handler: async (input, context) => {
-    const session = await context.runtime.sessionManager.init(input);
+    const { config } = context.runtime;
+    const mergedInput = {
+      headless: input.headless ?? config.defaultHeadless,
+      userDataDir: input.userDataDir ?? config.defaultUserDataDir,
+      proxy: input.proxy ?? config.defaultProxy ?? null,
+      locale: input.locale ?? config.defaultLocale,
+      timeoutMs: input.timeoutMs ?? config.timeoutMs
+    };
+
+    const session = await context.runtime.sessionManager.init(mergedInput);
     context.trace.record("session.init", session.userDataDir, session.sessionId);
 
     return {
@@ -128,10 +137,10 @@ export const ensureLoginToolDefinition: ToolDefinition<
       ...(result.loggedIn
         ? {}
         : {
-            status: "need_user_action" as const,
-            code: ToolCode.NOT_LOGGED_IN,
-            message: "当前未登录，请先完成短信登录"
-          })
+          status: "need_user_action" as const,
+          code: ToolCode.NOT_LOGGED_IN,
+          message: "当前未登录，请先完成短信登录"
+        })
     };
   }
 };

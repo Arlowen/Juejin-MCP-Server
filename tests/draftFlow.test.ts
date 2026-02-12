@@ -11,7 +11,7 @@ class FakeLocator {
   public constructor(
     private readonly page: FakePage,
     private readonly kind: "title" | "content" | "save" | "generic"
-  ) {}
+  ) { }
 
   public first(): FakeLocator {
     return this;
@@ -154,7 +154,11 @@ describe("DraftFlow idempotency", () => {
       {
         baseUrl: "https://juejin.cn",
         timeoutMs: 5_000,
-        retryCount: 1
+        retryCount: 1,
+        defaultUserDataDir: "./juejin-data",
+        defaultHeadless: false,
+        defaultProxy: undefined,
+        defaultLocale: "zh-CN"
       }
     );
 

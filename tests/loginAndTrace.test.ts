@@ -14,7 +14,11 @@ describe("LoginFlow ensureLogin", () => {
       {
         baseUrl: "https://juejin.cn",
         timeoutMs: 45_000,
-        retryCount: 2
+        retryCount: 2,
+        defaultUserDataDir: "./juejin-data",
+        defaultHeadless: false,
+        defaultProxy: undefined,
+        defaultLocale: "zh-CN"
       }
     );
 
