@@ -1,0 +1,41 @@
+{
+  "traceId": "8f5edd99-dbf1-48a6-b225-c2771fda0524",
+  "toolName": "profile_get_self",
+  "startedAt": "2026-02-13T01:56:32.305Z",
+  "steps": [
+    {
+      "ts": "2026-02-13T01:56:32.305Z",
+      "action": "tool.start",
+      "target": "profile_get_self",
+      "note": "tool execution started"
+    },
+    {
+      "ts": "2026-02-13T01:56:32.306Z",
+      "action": "login.check",
+      "target": "role=button;name=/写文章|创作中心|创作者中心/",
+      "note": "checking visibility"
+    },
+    {
+      "ts": "2026-02-13T01:56:32.310Z",
+      "action": "login.check",
+      "target": "css=img[src*='avatar'], img[alt*='头像']",
+      "note": "checking visibility"
+    },
+    {
+      "ts": "2026-02-13T01:56:32.311Z",
+      "action": "login.check",
+      "target": "css=a[href*='user']",
+      "note": "checking visibility"
+    },
+    {
+      "ts": "2026-02-13T01:56:32.314Z",
+      "action": "tool.end",
+      "target": "profile_get_self",
+      "note": "fatal_error:NOT_LOGGED_IN"
+    }
+  ],
+  "finishedAt": "2026-02-13T01:56:32.314Z",
+  "status": "fatal_error",
+  "code": "NOT_LOGGED_IN",
+  "message": "当前未登录，请先完成登录"
+}

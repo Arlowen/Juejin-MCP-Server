@@ -10,6 +10,7 @@
   },
   "scripts": {
     "dev": "tsx src/index.ts",
+    "inspect:ui": "bash scripts/inspect-ui.sh",
     "build": "tsup",
     "start": "node dist/index.js",
     "lint": "eslint . --ext .ts",

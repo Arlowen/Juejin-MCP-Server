@@ -1,0 +1,29 @@
+{
+  "traceId": "f36b185e-5145-4cb7-8c2f-8d2a4484a04b",
+  "toolName": "session_close",
+  "startedAt": "2026-02-13T02:02:18.962Z",
+  "steps": [
+    {
+      "ts": "2026-02-13T02:02:18.962Z",
+      "action": "tool.start",
+      "target": "session_close",
+      "note": "tool execution started"
+    },
+    {
+      "ts": "2026-02-13T02:02:19.044Z",
+      "action": "session.close",
+      "target": "global",
+      "note": "session closed"
+    },
+    {
+      "ts": "2026-02-13T02:02:19.044Z",
+      "action": "tool.end",
+      "target": "session_close",
+      "note": "success:OK"
+    }
+  ],
+  "finishedAt": "2026-02-13T02:02:19.044Z",
+  "status": "success",
+  "code": "OK",
+  "message": "ok"
+}

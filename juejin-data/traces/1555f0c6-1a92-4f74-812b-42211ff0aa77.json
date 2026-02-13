@@ -1,0 +1,29 @@
+{
+  "traceId": "1555f0c6-1a92-4f74-812b-42211ff0aa77",
+  "toolName": "session_init",
+  "startedAt": "2026-02-13T02:02:14.184Z",
+  "steps": [
+    {
+      "ts": "2026-02-13T02:02:14.184Z",
+      "action": "tool.start",
+      "target": "session_init",
+      "note": "tool execution started"
+    },
+    {
+      "ts": "2026-02-13T02:02:14.184Z",
+      "action": "session.init",
+      "target": "./juejin-data",
+      "note": "global"
+    },
+    {
+      "ts": "2026-02-13T02:02:14.184Z",
+      "action": "tool.end",
+      "target": "session_init",
+      "note": "success:OK"
+    }
+  ],
+  "finishedAt": "2026-02-13T02:02:14.184Z",
+  "status": "success",
+  "code": "OK",
+  "message": "session initialized"
+}
