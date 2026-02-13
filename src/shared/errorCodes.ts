@@ -11,7 +11,6 @@ export enum ToolCode {
   UNKNOWN = "UNKNOWN",
   NOT_LOGGED_IN = "NOT_LOGGED_IN",
   CAPTCHA_REQUIRED = "CAPTCHA_REQUIRED",
-  SMS_RATE_LIMIT = "SMS_RATE_LIMIT",
   SELECTOR_CHANGED = "SELECTOR_CHANGED",
   NAVIGATION_TIMEOUT = "NAVIGATION_TIMEOUT",
   PUBLISH_FAILED = "PUBLISH_FAILED",
@@ -44,8 +43,6 @@ export function codeToDefaultMessage(code: ToolCode): string {
       return "当前未登录";
     case ToolCode.CAPTCHA_REQUIRED:
       return "需要完成人机验证";
-    case ToolCode.SMS_RATE_LIMIT:
-      return "短信发送过于频繁";
     case ToolCode.SELECTOR_CHANGED:
       return "页面结构或选择器已变化";
     case ToolCode.NAVIGATION_TIMEOUT:

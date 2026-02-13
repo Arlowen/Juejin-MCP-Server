@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 import { ToolCode } from "../../shared/errorCodes.js";
-import { ToolError } from "../../shared/toolError.js";
 import type { ToolDefinition } from "../types.js";
 
 const sessionInitSchema = {
@@ -15,16 +14,10 @@ const sessionInitSchema = {
 type SessionInitInput = z.infer<z.ZodObject<typeof sessionInitSchema>>;
 
 const ensureLoginSchema = {
-  preferred: z.enum(["sms", "qr", "auto"]).optional().default("auto")
+  preferred: z.enum(["qr", "auto"]).optional().default("auto")
 };
 
 type EnsureLoginInput = z.infer<z.ZodObject<typeof ensureLoginSchema>>;
-
-const debugScreenshotSchema = {
-  fullPage: z.boolean().optional().default(true)
-};
-
-type DebugScreenshotInput = z.infer<z.ZodObject<typeof debugScreenshotSchema>>;
 
 const emptySchema = {};
 
@@ -122,7 +115,7 @@ export const ensureLoginToolDefinition: ToolDefinition<
       avatarUrl: string;
     };
     next?: {
-      method: "sms";
+      method: "qr";
       actionHints: string[];
     };
   }
@@ -139,109 +132,8 @@ export const ensureLoginToolDefinition: ToolDefinition<
         : {
           status: "need_user_action" as const,
           code: ToolCode.NOT_LOGGED_IN,
-          message: "当前未登录，请先完成短信登录"
+          message: "当前未登录，请先获取二维码并扫码登录"
         })
-    };
-  }
-};
-
-export const debugScreenshotToolDefinition: ToolDefinition<
-  typeof debugScreenshotSchema,
-  DebugScreenshotInput,
-  {
-    pngBase64: string;
-    path: string;
-  }
-> = {
-  name: "debug_screenshot",
-  description: "抓取当前页面截图并返回 base64。",
-  schema: debugScreenshotSchema,
-  handler: async (input, context) => {
-    if (!context.runtime.sessionManager.isInitialized()) {
-      throw ToolError.fatal(ToolCode.NOT_LOGGED_IN, "会话未初始化，请先调用 session_init");
-    }
-
-    const page = await context.runtime.sessionManager.getPage();
-    const userDataDir = context.runtime.sessionManager.getUserDataDir();
-    if (!userDataDir) {
-      throw ToolError.fatal(ToolCode.NOT_LOGGED_IN, "会话未初始化，请先调用 session_init");
-    }
-
-    const screenshot = await context.runtime.artifacts.captureScreenshot(
-      page,
-      userDataDir,
-      context.traceId,
-      input.fullPage ?? true
-    );
-
-    context.trace.record("debug.screenshot", screenshot.path, "captured");
-
-    return {
-      data: screenshot
-    };
-  }
-};
-
-export const debugGetTraceToolDefinition: ToolDefinition<
-  typeof emptySchema,
-  EmptyInput,
-  {
-    steps: Array<{
-      ts: string;
-      action: string;
-      target: string;
-      note: string;
-    }>;
-  }
-> = {
-  name: "debug_get_trace",
-  description: "返回最近一次工具调用的 trace steps。",
-  schema: emptySchema,
-  handler: (_input, context) => {
-    const latest = context.runtime.traceStore.getLatest();
-    return {
-      data: {
-        steps: latest?.steps ?? []
-      }
-    };
-  }
-};
-
-export const debugDumpHtmlToolDefinition: ToolDefinition<
-  typeof emptySchema,
-  EmptyInput,
-  {
-    html: string;
-    path: string;
-    truncated: boolean;
-  }
-> = {
-  name: "debug_dump_html",
-  description: "导出当前页面 HTML 以便排障。",
-  schema: emptySchema,
-  handler: async (_input, context) => {
-    if (!context.runtime.sessionManager.isInitialized()) {
-      throw ToolError.fatal(ToolCode.NOT_LOGGED_IN, "会话未初始化，请先调用 session_init");
-    }
-
-    const page = await context.runtime.sessionManager.getPage();
-    const userDataDir = context.runtime.sessionManager.getUserDataDir();
-
-    if (!userDataDir) {
-      throw ToolError.fatal(ToolCode.NOT_LOGGED_IN, "会话未初始化，请先调用 session_init");
-    }
-
-    const dump = await context.runtime.artifacts.captureCurrentPageDump(
-      page,
-      userDataDir,
-      context.traceId,
-      200_000
-    );
-
-    context.trace.record("debug.dump_html", dump.path, `truncated=${String(dump.truncated)}`);
-
-    return {
-      data: dump
     };
   }
 };

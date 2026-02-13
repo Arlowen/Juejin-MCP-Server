@@ -3,11 +3,10 @@ import { ToolError } from "../shared/toolError.js";
 import type { SessionManager } from "../session/SessionManager.js";
 import type { AppConfig } from "../shared/config.js";
 import type { TraceRecorder } from "../observability/TraceStore.js";
-import type { Page } from "playwright";
+import type { Locator, Page } from "playwright";
 import {
   clickWithFallback,
   containsRiskText,
-  fillWithFallback,
   gotoWithRetry,
   type SelectorCandidate
 } from "./browserUtils.js";
@@ -28,23 +27,25 @@ interface EnsureLoginData {
   loggedIn: boolean;
   user?: UserSnapshot;
   next?: {
-    method: "sms";
+    method: "qr";
     actionHints: string[];
   };
 }
 
-interface SmsSendData {
-  sent: boolean;
-  cooldownSeconds: number;
+interface LoginQrCodeCapture {
+  pngBuffer: Buffer;
+  mimeType: "image/png";
+  width: number;
+  height: number;
 }
 
-interface VerifyData {
-  loggedIn: boolean;
-  user: Pick<UserSnapshot, "nickname" | "uid">;
+interface QrCaptureCandidate {
+  buffer: Buffer;
+  width: number;
+  height: number;
 }
 
 const RISK_TEXTS = ["滑块", "验证码", "安全验证", "请完成验证", "行为验证"];
-const SMS_RATE_LIMIT_TEXTS = ["发送过于频繁", "稍后再试", "请求太频繁"];
 
 const LOGIN_ENTRY_SELECTORS: SelectorCandidate[] = [
   { type: "role", role: "button", name: /登录|注册/ },
@@ -52,35 +53,27 @@ const LOGIN_ENTRY_SELECTORS: SelectorCandidate[] = [
   { type: "css", css: "a[href*='login']" }
 ];
 
-const SMS_TAB_SELECTORS: SelectorCandidate[] = [
-  { type: "role", role: "tab", name: /短信|验证码|手机号/ },
-  { type: "text", text: /手机验证码登录|短信登录|验证码登录/ },
-  { type: "css", css: "button:has-text('验证码')" }
+const QR_TAB_SELECTORS: SelectorCandidate[] = [
+  { type: "role", role: "tab", name: /二维码|扫码/ },
+  { type: "text", text: /扫码登录|二维码登录|扫码/ },
+  { type: "css", css: "button:has-text('扫码'), button:has-text('二维码')" }
 ];
 
-const PHONE_INPUT_SELECTORS: SelectorCandidate[] = [
-  { type: "placeholder", placeholder: /手机号|请输入手机号/ },
-  { type: "label", label: /手机号/ },
-  { type: "css", css: "input[type='tel'], input[name*='phone'], input[placeholder*='手机']" }
+const QR_LOCATOR_SELECTORS = [
+  "[class*='qrcode'] canvas",
+  "[class*='qr-code'] canvas",
+  "[class*='qr'] canvas",
+  "canvas[class*='qr']",
+  "canvas[id*='qr']",
+  "img[src*='qrcode']",
+  "img[alt*='二维码']",
+  "[class*='qrcode'] img",
+  "[class*='qr-code'] img",
+  "[class*='qr'] img"
 ];
 
-const CODE_INPUT_SELECTORS: SelectorCandidate[] = [
-  { type: "placeholder", placeholder: /验证码|请输入验证码/ },
-  { type: "label", label: /验证码/ },
-  { type: "css", css: "input[name*='code'], input[placeholder*='验证码']" }
-];
-
-const SEND_CODE_SELECTORS: SelectorCandidate[] = [
-  { type: "role", role: "button", name: /获取验证码|发送验证码/ },
-  { type: "text", text: /获取验证码|发送验证码/ },
-  { type: "css", css: "button:has-text('验证码')" }
-];
-
-const LOGIN_SUBMIT_SELECTORS: SelectorCandidate[] = [
-  { type: "role", role: "button", name: /登录|确认/ },
-  { type: "text", text: /^登录$/ },
-  { type: "css", css: "button[type='submit'], button:has-text('登录')" }
-];
+const MIN_QR_DIMENSION = 90;
+const MAX_QR_SCAN_NODE_COUNT = 20;
 
 export class LoginFlow {
   public constructor(
@@ -98,6 +91,13 @@ export class LoginFlow {
     }
 
     const page = await this.sessionManager.getPage();
+    await gotoWithRetry(
+      page,
+      this.config.baseUrl,
+      trace,
+      this.config.retryCount,
+      this.config.timeoutMs
+    ).catch(() => undefined);
     const loggedIn = await this.isLoggedIn(page, trace);
 
     if (!loggedIn) {
@@ -109,6 +109,14 @@ export class LoginFlow {
     }
 
     const user = await this.readCurrentUser(page, trace);
+    const persisted = await this.sessionManager.persistCookies().catch(() => undefined);
+    if (persisted) {
+      trace.record(
+        "login.cookie.persist",
+        persisted.path,
+        `cookieCount=${String(persisted.cookieCount)}`
+      );
+    }
 
     return {
       loggedIn: true,
@@ -118,7 +126,7 @@ export class LoginFlow {
   }
 
   public async ensureLogin(
-    preferred: "sms" | "qr" | "auto",
+    preferred: "qr" | "auto",
     trace: TraceRecorder
   ): Promise<EnsureLoginData> {
     const status = await this.getSessionStatus(trace);
@@ -130,27 +138,22 @@ export class LoginFlow {
       };
     }
 
-    const normalizedPreferred = "sms";
-    trace.record(
-      "login.ensure",
-      normalizedPreferred,
-      "preferred qr/auto is downgraded to sms in phase1"
-    );
+    trace.record("login.ensure", preferred, "qr login required");
 
     return {
       loggedIn: false,
       next: {
-        method: "sms",
+        method: "qr",
         actionHints: [
-          "call login_send_sms_code",
-          "then login_verify_sms_code",
-          "if CAPTCHA appears, complete it in visible browser and retry"
+          "call login_get_qr_code",
+          "scan qr with juejin app in visible browser",
+          "then call session_status or ensure_login to confirm"
         ]
       }
     };
   }
 
-  public async sendSmsCode(phone: string, trace: TraceRecorder): Promise<SmsSendData> {
+  public async getLoginQrCode(trace: TraceRecorder): Promise<LoginQrCodeCapture> {
     const page = await this.sessionManager.getPage();
     await gotoWithRetry(
       page,
@@ -160,57 +163,14 @@ export class LoginFlow {
       this.config.timeoutMs
     );
 
-    await this.ensureLoginPanelVisible(page, trace);
-    await fillWithFallback(page, trace, PHONE_INPUT_SELECTORS, phone, this.config.timeoutMs);
-    await clickWithFallback(page, trace, SEND_CODE_SELECTORS, this.config.timeoutMs);
-
-    if (await containsRiskText(page, RISK_TEXTS)) {
-      throw ToolError.needUserAction(ToolCode.CAPTCHA_REQUIRED, "检测到验证码/滑块，请人工完成");
-    }
-
-    if (await containsRiskText(page, SMS_RATE_LIMIT_TEXTS)) {
-      throw ToolError.needUserAction(ToolCode.SMS_RATE_LIMIT, "短信发送过于频繁，请稍后重试");
-    }
+    await this.ensureQrLoginPanelVisible(page, trace);
+    const qrCapture = await this.captureQrCode(page, trace);
 
     return {
-      sent: true,
-      cooldownSeconds: 60
-    };
-  }
-
-  public async verifySmsCode(
-    phone: string,
-    code: string,
-    trace: TraceRecorder
-  ): Promise<VerifyData> {
-    const page = await this.sessionManager.getPage();
-
-    await this.ensureLoginPanelVisible(page, trace);
-    await fillWithFallback(page, trace, PHONE_INPUT_SELECTORS, phone, this.config.timeoutMs);
-    await fillWithFallback(page, trace, CODE_INPUT_SELECTORS, code, this.config.timeoutMs);
-    await clickWithFallback(page, trace, LOGIN_SUBMIT_SELECTORS, this.config.timeoutMs);
-
-    if (await containsRiskText(page, RISK_TEXTS)) {
-      throw ToolError.needUserAction(ToolCode.CAPTCHA_REQUIRED, "检测到验证码/滑块，请人工完成");
-    }
-
-    await page.waitForTimeout(1500);
-    const loggedIn = await this.isLoggedIn(page, trace);
-
-    if (!loggedIn) {
-      throw ToolError.retryable(
-        ToolCode.NOT_LOGGED_IN,
-        "登录状态未确认，请检查验证码是否正确后重试"
-      );
-    }
-
-    const user = await this.readCurrentUser(page, trace);
-    return {
-      loggedIn: true,
-      user: {
-        nickname: user.nickname,
-        uid: user.uid
-      }
+      pngBuffer: qrCapture.buffer,
+      mimeType: "image/png",
+      width: qrCapture.width,
+      height: qrCapture.height
     };
   }
 
@@ -235,12 +195,88 @@ export class LoginFlow {
     } catch {
       // 登录弹层可能已经打开，忽略入口点击错误。
     }
+  }
 
+  private async ensureQrLoginPanelVisible(page: Page, trace: TraceRecorder): Promise<void> {
+    await this.ensureLoginPanelVisible(page, trace);
     try {
-      await clickWithFallback(page, trace, SMS_TAB_SELECTORS, 2_000);
+      await clickWithFallback(page, trace, QR_TAB_SELECTORS, 2_000);
     } catch {
-      // 已处于短信登录时不需要切 tab。
+      // 已处于二维码登录时不需要切 tab。
     }
+  }
+
+  private async screenshotLocatorIfQrLike(
+    locator: Locator,
+    trace: TraceRecorder,
+    label: string
+  ): Promise<QrCaptureCandidate | undefined> {
+    const visible = await locator.isVisible().catch(() => false);
+    if (!visible) {
+      return undefined;
+    }
+
+    const box = await locator.boundingBox().catch(() => null);
+    if (!box || box.width < MIN_QR_DIMENSION || box.height < MIN_QR_DIMENSION) {
+      return undefined;
+    }
+
+    const buffer = await locator.screenshot({ type: "png" }).catch(() => undefined);
+    if (!buffer || buffer.length === 0) {
+      return undefined;
+    }
+
+    trace.record("login.qr.capture", label, `${Math.round(box.width)}x${Math.round(box.height)}`);
+    return {
+      buffer,
+      width: Math.round(box.width),
+      height: Math.round(box.height)
+    };
+  }
+
+  private async captureQrCode(page: Page, trace: TraceRecorder): Promise<QrCaptureCandidate> {
+    for (const selector of QR_LOCATOR_SELECTORS) {
+      const candidate = await this.screenshotLocatorIfQrLike(
+        page.locator(selector).first(),
+        trace,
+        `selector=${selector}`
+      );
+      if (candidate) {
+        return candidate;
+      }
+    }
+
+    const genericLocators = [
+      { locator: page.locator("canvas"), label: "canvas" },
+      { locator: page.locator("img"), label: "img" }
+    ];
+
+    for (const { locator, label } of genericLocators) {
+      const count = await locator.count();
+      const scanCount = Math.min(count, MAX_QR_SCAN_NODE_COUNT);
+      for (let index = 0; index < scanCount; index += 1) {
+        const candidate = await this.screenshotLocatorIfQrLike(
+          locator.nth(index),
+          trace,
+          `${label}[${String(index)}]`
+        );
+        if (candidate) {
+          return candidate;
+        }
+      }
+    }
+
+    if (await containsRiskText(page, RISK_TEXTS)) {
+      throw ToolError.needUserAction(
+        ToolCode.CAPTCHA_REQUIRED,
+        "检测到验证码/滑块，请先人工完成再重新获取二维码"
+      );
+    }
+
+    throw ToolError.fatal(
+      ToolCode.SELECTOR_CHANGED,
+      "未找到可识别的登录二维码，请确认掘金登录弹层已打开"
+    );
   }
 
   private async isLoggedIn(page: Page, trace: TraceRecorder): Promise<boolean> {
@@ -340,8 +376,7 @@ export class LoginFlow {
 
 export type {
   EnsureLoginData,
+  LoginQrCodeCapture,
   SessionStatusData,
-  SmsSendData,
-  UserSnapshot,
-  VerifyData
+  UserSnapshot
 };

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import {
   createServer as createHttpServer,
   type IncomingHttpHeaders,
@@ -11,6 +12,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { type McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 
+import { getQrCodeArtifactFilePath } from "../observability/QrCodeRegistry.js";
 import { toAppError } from "../shared/errors.js";
 import { appLogger } from "../shared/logger.js";
 import { createServer } from "./createServer.js";
@@ -86,6 +88,23 @@ function writePlainTextResponse(res: ServerResponse, statusCode: number, message
   res.statusCode = statusCode;
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   res.end(message);
+}
+
+function writeBinaryResponse(
+  res: ServerResponse,
+  statusCode: number,
+  contentType: string,
+  buffer: Buffer
+): void {
+  if (res.headersSent || res.writableEnded) {
+    return;
+  }
+
+  res.statusCode = statusCode;
+  res.setHeader("Content-Type", contentType);
+  res.setHeader("Content-Length", String(buffer.byteLength));
+  res.setHeader("Cache-Control", "no-store");
+  res.end(buffer);
 }
 
 function writeJsonRpcError(
@@ -365,6 +384,38 @@ export async function startHttpServer(): Promise<void> {
           mcpPath: config.mcpPath,
           timestamp: new Date().toISOString()
         });
+        return;
+      }
+
+      if (method === "GET" && path.startsWith("/qr/")) {
+        const qrId = path.slice("/qr/".length).trim();
+        if (!qrId) {
+          writePlainTextResponse(res, 404, "Not Found");
+          return;
+        }
+
+        const filePath = getQrCodeArtifactFilePath(qrId);
+        if (!filePath) {
+          writePlainTextResponse(res, 404, "QR code expired or not found");
+          return;
+        }
+
+        const buffer = await readFile(filePath).catch((error: unknown) => {
+          if (
+            typeof error === "object" &&
+            error !== null &&
+            "code" in error &&
+            error.code === "ENOENT"
+          ) {
+            return undefined;
+          }
+          throw error;
+        });
+        if (!buffer) {
+          writePlainTextResponse(res, 404, "QR code expired or not found");
+          return;
+        }
+        writeBinaryResponse(res, 200, "image/png", buffer);
         return;
       }
 

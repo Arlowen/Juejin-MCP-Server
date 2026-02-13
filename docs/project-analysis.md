@@ -166,16 +166,13 @@ src/
 
 ## 工具清单 (16 Tools)
 
-### 会话与调试
+### 会话
 | 工具 | 说明 |
 |------|------|
 | `session_init` | 初始化浏览器会话 |
 | `session_close` | 关闭会话 |
 | `session_status` | 查询会话状态 |
 | `ensure_login` | 检测登录状态，未登录则引导 SMS |
-| `debug_screenshot` | 当前页面截图 |
-| `debug_get_trace` | 获取 trace 记录 |
-| `debug_dump_html` | 导出当前页面 HTML |
 
 ### 登录
 | 工具 | 说明 |

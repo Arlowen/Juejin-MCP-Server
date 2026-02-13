@@ -12,14 +12,9 @@ import {
   profileGetSelfToolDefinition
 } from "./handlers/contentHandlers.js";
 import {
-  loginSendSmsCodeToolDefinition,
-  loginVerifySmsCodeToolDefinition
+  loginGetQrCodeToolDefinition
 } from "./handlers/loginHandlers.js";
-import { pingToolDefinition } from "./handlers/pingHandler.js";
 import {
-  debugDumpHtmlToolDefinition,
-  debugGetTraceToolDefinition,
-  debugScreenshotToolDefinition,
   ensureLoginToolDefinition,
   sessionCloseToolDefinition,
   sessionInitToolDefinition,
@@ -49,17 +44,12 @@ function registerTool<TSchema extends ZodRawShape, TInput, TData>(
 export function registerTools(server: McpServer): void {
   const runtime = createToolRuntime();
 
-  registerTool(server, runtime, pingToolDefinition);
   registerTool(server, runtime, sessionInitToolDefinition);
   registerTool(server, runtime, sessionCloseToolDefinition);
   registerTool(server, runtime, sessionStatusToolDefinition);
   registerTool(server, runtime, ensureLoginToolDefinition);
-  registerTool(server, runtime, debugScreenshotToolDefinition);
-  registerTool(server, runtime, debugGetTraceToolDefinition);
-  registerTool(server, runtime, debugDumpHtmlToolDefinition);
 
-  registerTool(server, runtime, loginSendSmsCodeToolDefinition);
-  registerTool(server, runtime, loginVerifySmsCodeToolDefinition);
+  registerTool(server, runtime, loginGetQrCodeToolDefinition);
 
   registerTool(server, runtime, imageUploadToolDefinition);
   registerTool(server, runtime, draftCreateToolDefinition);

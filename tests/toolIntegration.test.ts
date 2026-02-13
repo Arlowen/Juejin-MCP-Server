@@ -1,11 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { TraceStore } from "../src/observability/TraceStore.js";
 import { ToolCode } from "../src/shared/errorCodes.js";
 import { ToolError } from "../src/shared/toolError.js";
 import { runTool } from "../src/shared/toolRunner.js";
 import { articleGetToolDefinition, draftPublishToolDefinition } from "../src/tools/handlers/contentHandlers.js";
-import { loginSendSmsCodeToolDefinition } from "../src/tools/handlers/loginHandlers.js";
+import { loginGetQrCodeToolDefinition } from "../src/tools/handlers/loginHandlers.js";
 
 function createRuntime(overrides: Partial<Record<string, unknown>> = {}): any {
   return {
@@ -48,47 +48,110 @@ function parsePayload(result: Awaited<ReturnType<typeof runTool>>): {
   };
 }
 
+afterEach(() => {
+  delete process.env.MCP_HTTP_HOST;
+  delete process.env.MCP_HTTP_PORT;
+});
+
 describe("tool integration with mocked flows", () => {
-  it("login_send_sms_code 成功路径", async () => {
+  it("login_get_qr_code 返回二维码并标记 need_user_action", async () => {
+    process.env.MCP_HTTP_HOST = "127.0.0.1";
+    process.env.MCP_HTTP_PORT = "3000";
     const runtime = createRuntime({
+      sessionManager: {
+        ...createRuntime().sessionManager,
+        isInitialized: () => true,
+        getUserDataDir: () => "/tmp/juejin-data"
+      },
       loginFlow: {
-        sendSmsCode: async () => ({
-          sent: true,
-          cooldownSeconds: 60
+        getLoginQrCode: async () => ({
+          pngBuffer: Buffer.from("qr"),
+          mimeType: "image/png",
+          width: 256,
+          height: 256
+        })
+      },
+      artifacts: {
+        saveScreenshotBuffer: async () => ({
+          path: "/tmp/juejin-data/artifacts/trace/login-qr.png"
         })
       }
     });
 
     const result = await runTool({
-      definition: loginSendSmsCodeToolDefinition,
+      definition: loginGetQrCodeToolDefinition,
       runtime,
-      args: { phone: "13800000000" }
+      args: {}
     });
 
     const payload = parsePayload(result);
-    expect(payload.ok).toBe(true);
-    expect(payload.code).toBe(ToolCode.OK);
+    expect(payload.ok).toBe(false);
+    expect(payload.status).toBe("need_user_action");
+    expect(payload.code).toBe(ToolCode.NOT_LOGGED_IN);
+    expect(String(payload.data.url)).toContain("http://127.0.0.1:3000/qr/");
   });
 
-  it("login_send_sms_code 验证码拦截路径", async () => {
+  it("login_get_qr_code 会透传验证码拦截错误", async () => {
+    process.env.MCP_HTTP_HOST = "127.0.0.1";
+    process.env.MCP_HTTP_PORT = "3000";
     const runtime = createRuntime({
+      sessionManager: {
+        ...createRuntime().sessionManager,
+        isInitialized: () => true,
+        getUserDataDir: () => "/tmp/juejin-data"
+      },
       loginFlow: {
-        sendSmsCode: async () => {
+        getLoginQrCode: async () => {
           throw ToolError.needUserAction(ToolCode.CAPTCHA_REQUIRED, "captcha required");
         }
       }
     });
 
     const result = await runTool({
-      definition: loginSendSmsCodeToolDefinition,
+      definition: loginGetQrCodeToolDefinition,
       runtime,
-      args: { phone: "13800000000" }
+      args: {}
     });
 
     const payload = parsePayload(result);
     expect(payload.ok).toBe(false);
     expect(payload.status).toBe("need_user_action");
     expect(payload.code).toBe(ToolCode.CAPTCHA_REQUIRED);
+  });
+
+  it("login_get_qr_code MCP_HTTP_PORT 非法时返回配置错误", async () => {
+    process.env.MCP_HTTP_HOST = "127.0.0.1";
+    process.env.MCP_HTTP_PORT = "bad-port";
+    const runtime = createRuntime({
+      sessionManager: {
+        ...createRuntime().sessionManager,
+        isInitialized: () => true,
+        getUserDataDir: () => "/tmp/juejin-data"
+      },
+      loginFlow: {
+        getLoginQrCode: async () => ({
+          pngBuffer: Buffer.from("qr"),
+          mimeType: "image/png",
+          width: 256,
+          height: 256
+        })
+      },
+      artifacts: {
+        saveScreenshotBuffer: async () => ({
+          path: "/tmp/juejin-data/artifacts/trace/login-qr.png"
+        })
+      }
+    });
+
+    const result = await runTool({
+      definition: loginGetQrCodeToolDefinition,
+      runtime,
+      args: {}
+    });
+
+    const payload = parsePayload(result);
+    expect(payload.ok).toBe(false);
+    expect(payload.code).toBe(ToolCode.VALIDATION_ERROR);
   });
 
   it("draft_publish 成功路径", async () => {

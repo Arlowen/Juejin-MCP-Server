@@ -59,7 +59,7 @@ npm test           # Vitest
   "ok": true,
   "traceId": "string",
   "status": "success | need_user_action | retryable_error | fatal_error",
-  "code": "OK | NOT_LOGGED_IN | CAPTCHA_REQUIRED | SMS_RATE_LIMIT | SELECTOR_CHANGED | NAVIGATION_TIMEOUT | PUBLISH_FAILED | IMAGE_UPLOAD_FAILED | VALIDATION_ERROR | INTERNAL_ERROR | UNKNOWN",
+  "code": "OK | NOT_LOGGED_IN | CAPTCHA_REQUIRED | SELECTOR_CHANGED | NAVIGATION_TIMEOUT | PUBLISH_FAILED | IMAGE_UPLOAD_FAILED | VALIDATION_ERROR | INTERNAL_ERROR | UNKNOWN",
   "message": "human readable message",
   "data": {}
 }
@@ -73,20 +73,28 @@ npm test           # Vitest
 
 ## 工具清单（首期）
 
-### 会话与调试
+### 会话
 
 - `session_init`
 - `session_close`
 - `session_status`
 - `ensure_login`
-- `debug_screenshot`
-- `debug_get_trace`
-- `debug_dump_html`
 
 ### 登录
 
-- `login_send_sms_code`
-- `login_verify_sms_code`
+- `login_get_qr_code`
+
+`login_get_qr_code` 返回字段示例：
+
+```json
+{
+  "url": "http://127.0.0.1:3000/qr/<id>",
+  "mimeType": "image/png",
+  "width": 256,
+  "height": 256,
+  "expiresAt": "2026-02-13T03:00:00.000Z"
+}
+```
 
 ### 内容
 
@@ -100,19 +108,15 @@ npm test           # Vitest
 
 - `profile_get_self`
 
-### 兼容工具
-
-- `tool.ping`
-
 ## 典型调用链路
 
 ### 登录链路
 
 1. `session_init`
 2. `ensure_login`
-3. `login_send_sms_code`
-4. `login_verify_sms_code`
-5. `session_status`
+3. `login_get_qr_code`
+4. 用户扫码
+5. `session_status`（或再次 `ensure_login`）
 
 ### 发布链路（两阶段）
 
@@ -143,15 +147,18 @@ npm test           # Vitest
 - `artifacts/<traceId>/`：截图和 HTML dump
 - `idempotency/drafts.json`：`draft_create` 幂等索引
 - `tmp/`：临时文件（如图片上传素材）
+- `session-cookies.json`：登录成功后自动写入 cookie；下次 `session_init` 会自动加载
 
 ## 传输说明
 
 - `POST /mcp`：发送 MCP JSON-RPC 请求（初始化与普通请求）
 - `GET /mcp`：SSE 流式通道（需 `mcp-session-id`）
 - `DELETE /mcp`：关闭会话（需 `mcp-session-id`）
+- `GET /qr/:id`：获取登录二维码 PNG（`login_get_qr_code` 生成的短时链接）
 
 ## 说明
 
 - 本期仅支持 `draft_create.format=markdown`
-- `ensure_login.preferred=qr/auto` 统一降级短信流程
+- `ensure_login.preferred` 当前支持 `qr/auto`
 - `draft_publish.scheduleTime` 已支持（ISO8601）
+- cookie 持久化策略：检测到已登录时自动写入 `session-cookies.json`，服务重启后存在该文件则自动恢复 cookie，不存在则需要重新登录
